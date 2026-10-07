@@ -1,0 +1,206 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>AI Local RAG Assistant</title>
+    <!-- Tailwind CSS CDN -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- Marked.js for Markdown parsing in chat -->
+    <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
+    <style>
+        @keyframes gradientBG {
+            0% { background-position: 0% 50%; }
+            50% { background-position: 100% 50%; }
+            100% { background-position: 0% 50%; }
+        }
+        .animated-bg {
+            background: linear-gradient(-45deg, #0f172a, #1e1b4b, #311042, #0f172a);
+            background-size: 400% 400%;
+            animation: gradientBG 15s ease infinite;
+        }
+        .glass-panel {
+            background: rgba(30, 41, 59, 0.7);
+            backdrop-filter: blur(16px);
+            -webkit-backdrop-filter: blur(16px);
+            border: 1px solid rgba(255, 255, 255, 0.08);
+        }
+        .glass-input {
+            background: rgba(15, 23, 42, 0.6);
+            backdrop-filter: blur(10px);
+            border: 1px solid rgba(255, 255, 255, 0.1);
+        }
+        /* Custom Scrollbars */
+        ::-webkit-scrollbar { width: 6px; }
+        ::-webkit-scrollbar-track { background: transparent; }
+        ::-webkit-scrollbar-thumb { background: rgba(255, 255, 255, 0.2); border-radius: 10px; }
+    </style>
+</head>
+<body class="animated-bg text-slate-100 h-screen flex overflow-hidden">
+
+    <!-- Sidebar for Uploads -->
+    <aside class="w-80 glass-panel flex flex-col justify-between p-6 z-10 shadow-2xl hidden md:flex">
+        <div>
+            <div class="flex items-center space-x-3 mb-8">
+                <div class="p-3 bg-indigo-600 rounded-xl shadow-lg shadow-indigo-500/30">
+                    <svg class="w-6 h-6 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 11a7 7 0 01-7 7m0 0a7 7 0 01-7-7m7 7v4m0 0H8m4 0h4m-4-8a3 3 0 100-6 3 3 0 000 6z"></path></svg>
+                </div>
+                <h1 class="text-xl font-bold tracking-wide">Local RAG</h1>
+            </div>
+
+            <div class="space-y-4">
+                <label class="block text-xs font-semibold uppercase tracking-wider text-slate-400">Upload Knowledge Base</label>
+                <div class="border-2 border-dashed border-slate-600/60 rounded-2xl p-6 text-center hover:border-indigo-500 transition-all cursor-pointer relative bg-slate-900/40" id="drop-zone">
+                    <input type="file" id="pdf-upload" accept=".pdf" multiple class="absolute inset-0 opacity-0 cursor-pointer">
+                    <svg class="w-10 h-10 mx-auto text-indigo-400 mb-2 animate-bounce" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12"></path></svg>
+                    <p class="text-sm font-medium text-slate-300">Drop PDFs here or <span class="text-indigo-400">browse</span></p>
+                    <p class="text-xs text-slate-500 mt-1">Supports multiple documents</p>
+                </div>
+                <div id="upload-status" class="text-xs font-medium text-center text-emerald-400 min-h-[20px]"></div>
+            </div>
+        </div>
+
+        <div class="text-xs text-slate-500 text-center border-t border-slate-700/50 pt-4">
+            Powered by Ollama & LangChain
+        </div>
+    </aside>
+
+    <!-- Main Chat Window Area -->
+    <main class="flex-1 flex flex-col justify-between h-full relative">
+        
+        <!-- Header -->
+        <header class="glass-panel py-4 px-8 flex items-center justify-between border-b border-slate-800 shadow-sm z-10">
+            <div class="flex items-center space-x-3">
+                <div class="w-3 h-3 bg-emerald-500 rounded-full animate-pulse"></div>
+                <span class="font-semibold tracking-wide text-sm text-slate-200">Model: qwen3.5:0.8b</span>
+            </div>
+            <div class="text-xs bg-indigo-500/10 text-indigo-300 border border-indigo-500/20 py-1.5 px-3 rounded-full">
+                Secure Local Vector Store
+            </div>
+        </header>
+
+        <!-- Chat Stream Feed -->
+        <div id="chat-container" class="flex-1 overflow-y-auto p-6 space-y-6 flex flex-col">
+            <!-- Welcome Assistant Bubble -->
+            <div class="flex items-start space-x-4 max-w-2xl">
+                <div class="w-9 h-9 rounded-xl bg-gradient-to-tr from-indigo-600 to-violet-500 flex items-center justify-center text-white font-bold shadow-lg shadow-indigo-500/20 flex-shrink-0">AI</div>
+                <div class="glass-panel p-4 rounded-2xl rounded-tl-none text-sm text-slate-200 leading-relaxed shadow-lg">
+                    Hello! Upload your documents on the sidebar, then ask me anything regarding their content. Type <code class="bg-slate-800 text-indigo-300 px-1.5 py-0.5 rounded">q</code> to quit.
+                </div>
+            </div>
+        </div>
+
+        <!-- Typing Indicator (Hidden by default) -->
+        <div id="typing-indicator" class="hidden px-8 py-2">
+            <div class="flex items-center space-x-2 text-slate-400 text-xs italic">
+                <div class="w-2 h-2 bg-indigo-400 rounded-full animate-bounce"></div>
+                <div class="w-2 h-2 bg-indigo-400 rounded-full animate-bounce [animation-delay:0.2s]"></div>
+                <div class="w-2 h-2 bg-indigo-400 rounded-full animate-bounce [animation-delay:0.4s]"></div>
+                <span>Assistant is reading and analyzing documents...</span>
+            </div>
+        </div>
+
+        <!-- Chat Input Bar -->
+        <div class="p-6 glass-panel border-t border-slate-800 z-10">
+            <form id="chat-form" class="flex items-center space-x-4 max-w-4xl mx-auto">
+                <input type="text" id="user-input" placeholder="Ask a question about your documents..." autocomplete="off"
+                    class="flex-1 glass-input py-3.5 px-5 rounded-2xl text-slate-100 placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-indigo-500 text-sm shadow-inner transition-all">
+                <button type="submit" class="bg-indigo-600 hover:bg-indigo-500 text-white px-6 py-3.5 rounded-2xl font-semibold text-sm transition-all shadow-lg shadow-indigo-600/30 flex items-center space-x-2 flex-shrink-0">
+                    <span>Send</span>
+                    <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M14 5l7 7m0 0l-7 7m7-7H3"></path></svg>
+                </button>
+            </form>
+        </div>
+
+    </main>
+
+    <!-- Frontend Script Logic -->
+    <script>
+        const chatContainer = document.getElementById('chat-container');
+        const chatForm = document.getElementById('chat-form');
+        const userInput = document.getElementById('user-input');
+        const pdfUpload = document.getElementById('pdf-upload');
+        const uploadStatus = document.getElementById('upload-status');
+        const typingIndicator = document.getElementById('typing-indicator');
+
+        // Handle File Uploads via AJAX
+        pdfUpload.addEventListener('change', async (e) => {
+            const files = e.target.files;
+            if (!files.length) return;
+
+            const formData = new FormData();
+            for (let file of files) {
+                formData.append('files', file);
+            }
+
+            uploadStatus.innerText = "Processing & embedding PDFs...";
+            
+            try {
+                let response = await fetch('/upload', { method: 'POST', body: formData });
+                let result = await response.json();
+                if (response.ok) {
+                    uploadStatus.innerText = result.message;
+                } else {
+                    uploadStatus.innerText = result.error || "Upload failed.";
+                }
+            } catch (err) {
+                uploadStatus.innerText = "Error uploading files.";
+            }
+        });
+
+        // Handle Chat Submission
+        chatForm.addEventListener('submit', async (e) => {
+            e.preventDefault();
+            const question = userInput.value.trim();
+            if (!question) return;
+
+            // Append User Message
+            appendMessage(question, 'user');
+            userInput.value = '';
+            chatContainer.scrollTop = chatContainer.scrollHeight;
+
+            // Show Loader
+            typingIndicator.classList.remove('hidden');
+
+            try {
+                let response = await fetch('/chat', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ question })
+                });
+                let data = await response.json();
+                
+                typingIndicator.classList.add('hidden');
+                appendMessage(data.response, 'assistant');
+            } catch (err) {
+                typingIndicator.classList.add('hidden');
+                appendMessage("Error generating response from server.", 'assistant');
+            }
+        });
+
+        function appendMessage(text, sender) {
+            const isUser = sender === 'user';
+            const messageWrapper = document.createElement('div');
+            messageWrapper.className = `flex items-start space-x-4 max-w-2xl ${isUser ? 'ml-auto flex-row-reverse space-x-reverse' : ''}`;
+
+            const avatar = document.createElement('div');
+            avatar.className = `w-9 h-9 rounded-xl flex items-center justify-center text-white font-bold shadow-lg flex-shrink-0 ${isUser ? 'bg-emerald-600 shadow-emerald-600/20' : 'bg-gradient-to-tr from-indigo-600 to-violet-500 shadow-indigo-500/20'}`;
+            avatar.innerText = isUser ? 'You' : 'AI';
+
+            const bubble = document.createElement('div');
+            bubble.className = `glass-panel p-4 rounded-2xl text-sm text-slate-200 leading-relaxed shadow-lg ${isUser ? 'rounded-tr-none bg-indigo-950/40 border-indigo-500/30' : 'rounded-tl-none'}`;
+            
+            if (isUser) {
+                bubble.innerText = text;
+            } else {
+                bubble.innerHTML = marked.parse(text);
+            }
+
+            messageWrapper.appendChild(avatar);
+            messageWrapper.appendChild(bubble);
+            chatContainer.appendChild(messageWrapper);
+            chatContainer.scrollTop = chatContainer.scrollHeight;
+        }
+    </script>
+</body>
+</html>
